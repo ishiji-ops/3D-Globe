@@ -440,7 +440,7 @@
                     document.getElementById('area-container').classList.add('active');
                 } else {
                     document.getElementById('measure-container').classList.add('active');
-                    document.getElementById('measure-hint').innerText = currentMode === 'precise' ? '地球上の緯度経度交点をクリック (20分単位)' : '地球上の緯度経度交点をクリック (10°単位)';
+                    document.getElementById('measure-hint').innerText = currentMode === 'precise' ? '20分単位で連続タップ。リセットまで距離を加算します' : '地球上の緯度経度交点をクリック (10°単位)';
                 }
                 resetMeasurement();
             });
@@ -473,7 +473,7 @@
                       Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
                       Math.sin(dLon/2) * Math.sin(dLon/2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return (R * c).toFixed(1);
+            return R * c;
         }
 
         function centralAngle(a, b) {
@@ -1141,9 +1141,15 @@ function iso2ToFlag(iso2) {
             if (capitalMarker) { earthGroup.remove(capitalMarker); capitalMarker = null; }
             lastSelection = null;
             
-            document.getElementById('point1-info').innerHTML = '地点1: <span class="val">未選択</span>';
-            document.getElementById('point2-info').innerHTML = '地点2: <span class="val">未選択</span>';
-            document.getElementById('distance-result').innerText = '距離: --- km';
+            if (currentMode === 'precise') {
+                document.getElementById('point1-info').innerHTML = '開始点: <span class="val">未選択</span>';
+                document.getElementById('point2-info').innerHTML = '最新点: <span class="val">未選択</span>';
+                document.getElementById('distance-result').innerText = '累積距離: --- km';
+            } else {
+                document.getElementById('point1-info').innerHTML = '地点1: <span class="val">未選択</span>';
+                document.getElementById('point2-info').innerHTML = '地点2: <span class="val">未選択</span>';
+                document.getElementById('distance-result').innerText = '距離: --- km';
+            }
             document.getElementById('area-point-count').innerText = '0';
             document.getElementById('area-points').innerHTML = '';
             document.getElementById('area-result').innerText = '面積: --- km²';
@@ -1214,14 +1220,16 @@ function iso2ToFlag(iso2) {
                     updateAreaDisplay();
 
                 } else {
-                    if (selectedPoints.length >= 2) window.resetMeasurement();
+                    // 簡易モードは従来通り2点で1回の計測。
+                    // 精密モードはリセットするまで何点でも追加し、各区間を累積する。
+                    if (currentMode === 'simple' && selectedPoints.length >= 2) window.resetMeasurement();
 
                     const snapStep = currentMode === 'precise' ? (1/3) : 10;
                     const snappedLat = Math.round(rawLatLon.lat / snapStep) * snapStep;
                     const snappedLon = Math.round(rawLatLon.lon / snapStep) * snapStep;
 
                     selectedPoints.push({ lat: snappedLat, lon: snappedLon });
-                    
+
                     const markerPos = latLonToVector(snappedLat, snappedLon);
                     const markerRadius = currentMode === 'precise' ? 0.004 : 0.02;
                     const markerGeo = new THREE.SphereGeometry(markerRadius, 16, 16);
@@ -1236,12 +1244,72 @@ function iso2ToFlag(iso2) {
                     markers.push(marker);
 
                     if (selectedPoints.length === 1) {
-                        document.getElementById('point1-info').innerHTML = '地点1: <span class="val">' + formatLatLon(snappedLat, snappedLon) + '</span>';
+                        document.getElementById('point1-info').innerHTML =
+                            (currentMode === 'precise' ? '開始点: ' : '地点1: ') +
+                            '<span class="val">' + formatLatLon(snappedLat, snappedLon) + '</span>';
+
+                        if (currentMode === 'precise') {
+                            document.getElementById('point2-info').innerHTML =
+                                '最新点: <span class="val">未選択</span>';
+                            document.getElementById('distance-result').innerText = '累積距離: 0 km';
+                        }
+                    } else if (currentMode === 'precise') {
+                        document.getElementById('point2-info').innerHTML =
+                            '最新点 (' + selectedPoints.length + '点目): <span class="val">' +
+                            formatLatLon(snappedLat, snappedLon) + '</span>';
+
+                        // 各区間の距離をすべて加算
+                        let totalDist = 0;
+                        for (let p = 1; p < selectedPoints.length; p++) {
+                            totalDist += Number(calcHaversineDistance(
+                                selectedPoints[p - 1].lat, selectedPoints[p - 1].lon,
+                                selectedPoints[p].lat, selectedPoints[p].lon
+                            ));
+                        }
+                        document.getElementById('distance-result').innerText =
+                            '累積距離: 約 ' + Math.round(totalDist).toLocaleString() +
+                            ' km（' + (selectedPoints.length - 1) + '区間）';
+
+                        // 全選択点を結ぶ線を更新
+                        if (measureLine) {
+                            earthGroup.remove(measureLine);
+                            if (measureLine.geometry) measureLine.geometry.dispose();
+                            if (measureLine.material) measureLine.material.dispose();
+                            measureLine = null;
+                        }
+
+                        const linePoints = [];
+                        for (let p = 1; p < selectedPoints.length; p++) {
+                            const a = selectedPoints[p - 1];
+                            const b = selectedPoints[p];
+                            const v1 = latLonToVector(a.lat, a.lon).normalize();
+                            const v2 = latLonToVector(b.lat, b.lon).normalize();
+
+                            for (let i = 0; i <= 50; i++) {
+                                if (p > 1 && i === 0) continue;
+                                const t = i / 50;
+                                const v3 = v1.clone().lerp(v2, t).normalize().multiplyScalar(radius + 0.005);
+                                linePoints.push(v3);
+                            }
+                        }
+
+                        measureLine = new THREE.Line(
+                            new THREE.BufferGeometry().setFromPoints(linePoints),
+                            new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 3 })
+                        );
+                        earthGroup.add(measureLine);
+
                     } else if (selectedPoints.length === 2) {
-                        document.getElementById('point2-info').innerHTML = '地点2: <span class="val">' + formatLatLon(snappedLat, snappedLon) + '</span>';
-                        
-                        const dist = calcHaversineDistance(selectedPoints[0].lat, selectedPoints[0].lon, selectedPoints[1].lat, selectedPoints[1].lon);
-                        document.getElementById('distance-result').innerText = '距離: 約 ' + Number(dist).toLocaleString() + ' km';
+                        // 簡易モードは従来仕様のまま
+                        document.getElementById('point2-info').innerHTML =
+                            '地点2: <span class="val">' + formatLatLon(snappedLat, snappedLon) + '</span>';
+
+                        const dist = calcHaversineDistance(
+                            selectedPoints[0].lat, selectedPoints[0].lon,
+                            selectedPoints[1].lat, selectedPoints[1].lon
+                        );
+                        document.getElementById('distance-result').innerText =
+                            '距離: 約 ' + Math.round(dist).toLocaleString() + ' km';
 
                         const linePoints = [];
                         for (let i = 0; i <= 50; i++) {
@@ -1253,7 +1321,7 @@ function iso2ToFlag(iso2) {
                         }
                         measureLine = new THREE.Line(
                             new THREE.BufferGeometry().setFromPoints(linePoints),
-                            new THREE.LineBasicMaterial({ color: currentMode === 'precise' ? 0x00ff00 : 0xff00ff, linewidth: 3 })
+                            new THREE.LineBasicMaterial({ color: 0xff00ff, linewidth: 3 })
                         );
                         earthGroup.add(measureLine);
                     }
