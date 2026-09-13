@@ -40,6 +40,13 @@
             font-size: 14px;
         }
         .mode-select label { display: block; margin-bottom: 5px; cursor: pointer; }
+        .mode-current {
+            display: flex; justify-content: space-between; align-items: center;
+            cursor: pointer; padding: 4px 2px;
+        }
+        .mode-current-arrow { font-size: 11px; color: #7dff9a; white-space: nowrap; margin-left: 8px; }
+        .mode-options { display: none; margin-top: 8px; }
+        .mode-options.expanded { display: block; }
         .info-row { margin-bottom: 8px; font-size: 14px; }
         .val { color: #00ffff; font-weight: bold; }
         #distance-result { 
@@ -74,10 +81,16 @@
     <!-- UIパネル -->
     <div id="ui-panel">
         <div class="mode-select">
-            <label><input type="radio" name="mode" value="simple" checked> 簡易計測モード (10°単位)</label>
-            <label><input type="radio" name="mode" value="precise"> 精密計測モード (20分単位)</label>
-            <label><input type="radio" name="mode" value="area"> 面積モード (3点以上)</label>
-            <label><input type="radio" name="mode" value="globe"> 地球儀モード (国・首都情報)</label>
+            <div id="mode-current" class="mode-current">
+                <span id="mode-current-label">簡易計測モード (10°単位)</span>
+                <span class="mode-current-arrow">▾ モード変更</span>
+            </div>
+            <div id="mode-options" class="mode-options">
+                <label><input type="radio" name="mode" value="simple" checked> 簡易計測モード (10°単位)</label>
+                <label><input type="radio" name="mode" value="precise"> 精密計測モード (20分単位)</label>
+                <label><input type="radio" name="mode" value="area"> 面積モード (3点以上)</label>
+                <label><input type="radio" name="mode" value="globe"> 地球儀モード (国・首都情報)</label>
+            </div>
         </div>
 
         <div id="search-section" style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #555;">
@@ -435,9 +448,19 @@
         let displayLang = 'ja'; // 'ja' または 'en'
         let lastSelection = null; // { type: 'country'|'ocean', feature }
 
+        const modeCurrentEl = document.getElementById('mode-current');
+        const modeCurrentLabelEl = document.getElementById('mode-current-label');
+        const modeOptionsEl = document.getElementById('mode-options');
+
+        modeCurrentEl.addEventListener('click', () => {
+            modeOptionsEl.classList.toggle('expanded');
+        });
+
         document.querySelectorAll('input[name="mode"]').forEach(radio => {
             radio.addEventListener('change', (e) => {
                 currentMode = e.target.value;
+                modeCurrentLabelEl.innerText = e.target.parentElement.innerText.trim();
+                modeOptionsEl.classList.remove('expanded');
                 document.getElementById('measure-container').classList.remove('active');
                 document.getElementById('area-container').classList.remove('active');
                 document.getElementById('globe-container').classList.remove('active');
