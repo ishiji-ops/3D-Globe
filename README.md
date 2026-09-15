@@ -3,6 +3,8 @@
 子ども向けの地理学習用3D地球儀です。  
 距離計測、面積計測、国・首都・行政区・海域表示などに対応しています。
 
+An offline 3D globe made for my child's geography learning.
+
 ## 使用ライブラリ・データ
 
 - Three.js
